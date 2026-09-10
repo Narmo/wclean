@@ -1,0 +1,25 @@
+# Build and test output
+/wclean
+/wclean.exe
+/bin/
+/dist/
+*.test
+/coverage*.out
+/coverage*.html
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local logs and editor temporary files
+*.log
+*.swp
+*.swo
+*~
+.idea/
+
+# macOS metadata
+.DS_Store
+._*
