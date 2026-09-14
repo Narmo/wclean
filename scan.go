@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -25,7 +26,37 @@ type scanResult struct {
 }
 
 var libraryFolders = []string{"Caches", "Preferences", "Application Support", "Saved Application State", "Application Support/JetBrains", "Application Support/Google"}
-var bundleID = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9_-]+){2,}$`)
+// Two-component IDs are accepted only behind a TLD-like first label, which
+// keeps org.example apart from krita.log or default.store.
+var bundleID = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9_-]+){2,}|[A-Za-z]{2,4}\.[A-Za-z0-9_-]+)$`)
+
+func libraryID(name string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(name, ".plist"), ".savedState"))
+}
+
+// Apple domains and shared app-group containers belong to the system or to a
+// family of apps, so no single missing app makes them removable.
+func systemDomain(id string) bool {
+	if strings.HasPrefix(id, "com.apple.") || strings.Contains(id, ".com.apple.") {
+		return true
+	}
+	for _, part := range strings.Split(id, ".") {
+		if part == "group" || part == "systemgroup" {
+			return true
+		}
+	}
+	return false
+}
+
+// Helpers, plugins, and XPC services write under their app's own ID namespace.
+func ownedByInstalled(installed appInventory, id string) bool {
+	for cut := strings.LastIndex(id, "."); cut > 0; cut = strings.LastIndex(id[:cut], ".") {
+		if installed.IDs[id[:cut]] {
+			return true
+		}
+	}
+	return false
+}
 
 func scan(ctx context.Context, home string, roots []string) scanResult {
 	installed := inventory(ctx, roots)
@@ -41,6 +72,10 @@ func scan(ctx context.Context, home string, roots []string) scanResult {
 
 func scanLibrary(ctx context.Context, home string, installed appInventory) scanResult {
 	var result scanResult
+	var tokens map[string]string
+	if !installed.Incomplete {
+		tokens = leftoverTokens(home, installed)
+	}
 	for _, folder := range libraryFolders {
 		root := filepath.Join(home, "Library", folder)
 		// Do not traverse a redirected Library or category directory.
@@ -77,8 +112,7 @@ func scanLibrary(ctx context.Context, home string, installed appInventory) scanR
 			if folder == "Caches" && name == "kitty" {
 				continue
 			}
-			id := strings.TrimSuffix(strings.TrimSuffix(name, ".plist"), ".savedState")
-			id = strings.ToLower(id)
+			id := libraryID(name)
 			kind, reason := "Cache", "Cache data; close the owning app first. It may be recreated or contain offline content."
 			if ideFolder(folder) {
 				newer, ok := older[name]
@@ -87,11 +121,18 @@ func scanLibrary(ctx context.Context, home string, installed appInventory) scanR
 				}
 				kind, reason = "Leftover", "Older IDE data; newer folder: "+newer+". No scanned IDE metadata references this folder. Custom paths or unscanned IDEs may still use it; includes settings, plugins, and scratches."
 			} else if folder != "Caches" {
-				if installed.Incomplete || !bundleID.MatchString(id) || strings.HasPrefix(id, "com.apple.") || installed.IDs[id] {
+				if installed.Incomplete || systemDomain(id) || installed.IDs[id] || ownedByInstalled(installed, id) {
 					continue
 				}
-				// ponytail: reverse-DNS names only; human-named and shared folders need ownership evidence, not fuzzy deletion rules.
-				kind, reason = "Leftover", "No matching bundle ID in the scanned app locations. This is a candidate, not proof: helpers, shared data, or apps elsewhere may own it."
+				owner, vouched := tokens[id]
+				switch {
+				case bundleID.MatchString(id):
+					kind, reason = "Leftover", "No matching bundle ID in the scanned app locations. This is a candidate, not proof: helpers, shared data, or apps elsewhere may own it."
+				case vouched:
+					kind, reason = "Leftover", "Named after "+owner+", a bundle ID with no installed app. This is a candidate, not proof: shared data or an app elsewhere may own it."
+				default:
+					continue
+				}
 			}
 			path := filepath.Join(root, name)
 			info, err := os.Lstat(path)
@@ -107,10 +148,75 @@ func scanLibrary(ctx context.Context, home string, installed appInventory) scanR
 			}
 		}
 	}
+	result.keepCompanionLeftovers(home)
 	result.scanAppCaches(ctx, home)
 	result.scanStorage(ctx, home)
 	result.sort()
 	return result
+}
+
+// Any framework, installer, or JVM can write a preference domain, so most stale
+// plists never belonged to an app of their own. Report one only beside the
+// Application Support data it accompanies, where the app's absence is visible.
+func (result *scanResult) keepCompanionLeftovers(home string) {
+	support := filepath.Join(home, "Library", "Application Support")
+	keys := map[string]bool{}
+	for _, f := range result.Items {
+		if f.Kind == "Leftover" && filepath.Dir(f.Path) == support {
+			keys[libraryID(filepath.Base(f.Path))] = true
+		}
+	}
+	companion := func(id string) bool {
+		if keys[id] || keys[id[strings.LastIndex(id, ".")+1:]] {
+			return true
+		}
+		for key := range keys {
+			if strings.HasPrefix(id, key+".") {
+				return true
+			}
+		}
+		return false
+	}
+	result.Items = slices.DeleteFunc(result.Items, func(f finding) bool {
+		dir := filepath.Dir(f.Path)
+		if f.Kind != "Leftover" || dir != filepath.Join(home, "Library", "Preferences") && dir != filepath.Join(home, "Library", "Saved Application State") {
+			return false
+		}
+		return !companion(libraryID(filepath.Base(f.Path)))
+	})
+}
+
+// A human-named folder carries no ownership evidence of its own, so pair it
+// with a reverse-DNS sibling whose app is gone: the trailing component of such
+// an ID is the app's own name. Tokens that are short, deeply nested, or shared
+// with an installed app are too weak to act on.
+func leftoverTokens(home string, installed appInventory) map[string]string {
+	installedParts := map[string]bool{}
+	for id := range installed.IDs {
+		for _, part := range strings.Split(id, ".") {
+			installedParts[part] = true
+		}
+	}
+	tokens := map[string]string{}
+	for _, folder := range libraryFolders {
+		if folder == "Caches" || ideFolder(folder) {
+			continue
+		}
+		// A folder that cannot be read yields no evidence, and the scan warns about it.
+		entries, _ := os.ReadDir(filepath.Join(home, "Library", folder))
+		for _, entry := range entries {
+			id := libraryID(entry.Name())
+			parts := strings.Split(id, ".")
+			if len(parts) > 3 || !bundleID.MatchString(id) || systemDomain(id) || installed.IDs[id] || ownedByInstalled(installed, id) {
+				continue
+			}
+			// ponytail: exact name match only; suffixed siblings like <name>rc need a boundary rule that does not also catch unrelated folders.
+			if token := parts[len(parts)-1]; len(token) >= 4 && !installedParts[token] {
+				tokens[token] = id
+			}
+		}
+	}
+	return tokens
 }
 
 func (result *scanResult) addFinding(ctx context.Context, f finding) error {

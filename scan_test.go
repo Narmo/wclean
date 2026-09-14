@@ -30,10 +30,17 @@ func TestWclean(t *testing.T) {
 		return path
 	}
 	cache := put("Library/Caches/com.example.live/data", "12345")
-	put("Library/Preferences/com.example.gone.plist", "123")
+	put("Library/Preferences/com.example.gone.plist", "1234")
+	put("Library/Application Support/com.example.gone/data", "123")
 	put("Library/Preferences/com.example.live.plist", "keep")
 	put("Library/Preferences/com.apple.finder.plist", "keep")
 	put("Library/Application Support/Human Name/data", "keep")
+	put("Library/Preferences/org.ghostapp.plist", "1")
+	put("Library/Application Support/ghostapp/data", "12")
+	// No Application Support data vouches for these, so neither is reported.
+	put("Library/Preferences/io.orphan.plist", "orphan preference domain")
+	put("Library/Preferences/group.com.example.gone.plist", "shared app group")
+	put("Library/Preferences/com.example.live.helper.plist", "helper of an installed app")
 	outside := put("outside/data", "do not count")
 	if err := os.Symlink(outside, filepath.Join(filepath.Dir(cache), "link")); err != nil {
 		t.Fatal(err)
@@ -42,11 +49,20 @@ func TestWclean(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := scanLibrary(context.Background(), home, appInventory{IDs: map[string]bool{"com.example.live": true}})
-	if len(result.Warnings) != 0 || len(result.Items) != 2 {
+	if len(result.Warnings) != 0 || len(result.Items) != 5 {
 		t.Fatalf("unexpected scan: %+v", result)
 	}
-	if result.Items[0].Size != 5 || result.Items[1].Size != 3 || result.Items[1].Kind != "Leftover" {
+	if result.Items[0].Size != 5 || result.Items[1].Size != 4 || result.Items[1].Kind != "Leftover" {
 		t.Fatalf("wrong sizes or categories: %+v", result.Items)
+	}
+	if filepath.Base(result.Items[1].Path) != "com.example.gone.plist" {
+		t.Fatalf("preference accompanying app data must survive: %+v", result.Items)
+	}
+	if filepath.Base(result.Items[3].Path) != "ghostapp" || result.Items[3].Kind != "Leftover" {
+		t.Fatalf("human-named folder vouched for by org.ghostapp must be a leftover: %+v", result.Items)
+	}
+	if filepath.Base(result.Items[4].Path) != "org.ghostapp.plist" || result.Items[4].Kind != "Leftover" {
+		t.Fatalf("two-component bundle ID must be a leftover: %+v", result.Items)
 	}
 	for _, f := range result.Items {
 		if err := validateFinding(home, f); err != nil {
