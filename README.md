@@ -6,6 +6,8 @@ A local macOS cleaner with a Go terminal interface. Inspect first, remove one it
 
 Leftover detection is conservative and heuristic. Review every candidate before removing it.
 
+![wclean scanning ~/Library with the light theme](wclean-light.png)
+
 ## Run
 
 Requires macOS and Go 1.27.1 or newer. The TUI needs an interactive terminal; `clean` does not.
