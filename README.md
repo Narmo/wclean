@@ -62,7 +62,7 @@ A successfully removed **Cache** entry is remembered by its exact path in `~/Lib
 - Xcode `DerivedData` and `DocumentationCache`.
 - Container caches at `~/Library/Containers/<bundle-ID>/Data/Library/Caches` for non-Apple IDs.
 - **Leftover** candidates: reverse-DNS entries in `Preferences`, `Application Support`, and `Saved Application State` with no matching installed bundle ID, plus superseded JetBrains/Google IDE version folders. Apple IDs, human-named folders, and directories referenced by an installed IDE's `product-info.json` are excluded.
-- App inventory: `/Applications`, `/System/Applications`, `/System/Library/CoreServices`, `~/Applications`, and `--apps` locations, read with `plutil`. Any inventory failure disables leftover detection for that scan.
+- App inventory: `/Applications`, `/System/Applications`, `/System/Library/CoreServices`, `~/Applications`, and `--apps` locations, read with `plutil`. An unreadable location, a malformed `Info.plist`, or a non-string `CFBundleIdentifier` disables leftover detection for that scan; a readable bundle that declares no `CFBundleIdentifier` at all owns no reverse-DNS data and is skipped with a warning instead.
 - **Storage** (inspection first, `[danger]` to remove): everything under `~/Library/Developer/Xcode`, `Containers`, and `Group Containers`, plus `~/Library/Logs`, `~/.konan`, `~/.lldb`, `~/.m2`, `~/.gradle`.
 
 Cache rules exclude Service Worker storage, profiles, history, sessions, backups, and installed packages. Storage sizes include nested caches shown separately and are never counted as leftovers.

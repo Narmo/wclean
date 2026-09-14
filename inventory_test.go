@@ -74,10 +74,17 @@ func TestInventoryPlutil(t *testing.T) {
 				t.Fatalf("non-bundle treated as inventory failure or duplicated: %+v", result)
 			}
 
+			// A readable bundle declaring no CFBundleIdentifier owns no reverse-DNS data.
+			writeTestFile(t, filepath.Join(root, "Anonymous.app/Contents/Info.plist"), `<plist version="1.0"><dict><key>CFBundleName</key><string>Anonymous</string></dict></plist>`)
+			result = inventory(context.Background(), []string{root})
+			if result.Incomplete || len(result.Warnings) != 2 {
+				t.Fatalf("absent bundle ID treated as inventory failure: %+v", result)
+			}
+
 			// A plist that exists but cannot supply a valid ID must still block detection.
 			writeTestFile(t, filepath.Join(root, "Broken.app/Contents/Info.plist"), `<plist version="1.0"><dict><key>CFBundleIdentifier</key><integer>42</integer></dict></plist>`)
 			result = inventory(context.Background(), []string{root})
-			if !result.Incomplete || len(result.Warnings) != 2 || result.IDs["42"] {
+			if !result.Incomplete || len(result.Warnings) != 3 || result.IDs["42"] {
 				t.Fatalf("invalid ID accepted: %+v", result)
 			}
 		})

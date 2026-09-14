@@ -98,12 +98,22 @@ func inventory(ctx context.Context, roots []string) appInventory {
 					plists[canonical] = true
 					data, err := exec.CommandContext(ctx, "/usr/bin/plutil", "-extract", "CFBundleIdentifier", "raw", "-expect", "string", "-o", "-", canonical).CombinedOutput()
 					id = strings.ToLower(strings.TrimSpace(string(data)))
-					if err != nil {
-						fail(canonical, fmt.Errorf("bundle ID: %w: %s", err, strings.TrimSpace(string(data))))
-					} else if id == "" {
-						fail(canonical, fmt.Errorf("empty bundle ID"))
-					} else {
+					if err == nil && id != "" {
 						result.IDs[id] = true
+					} else {
+						detail := strings.TrimSpace(string(data))
+						id = ""
+						// A readable bundle that declares no CFBundleIdentifier at all can own no
+						// reverse-DNS Library data, so skip it like missing metadata instead of
+						// letting one such app disable leftover detection for the whole scan. A
+						// malformed or unreadable plist may still hide an installed app.
+						absent := exec.CommandContext(ctx, "/usr/bin/plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-", canonical).Run() != nil
+						readable := exec.CommandContext(ctx, "/usr/bin/plutil", "-lint", "-s", canonical).Run() == nil
+						if absent && readable {
+							result.Warnings = append(result.Warnings, "No bundle ID declared; skipped: "+canonical)
+						} else {
+							fail(canonical, fmt.Errorf("bundle ID: %v: %s", err, detail))
+						}
 					}
 				}
 			}
