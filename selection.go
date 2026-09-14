@@ -295,6 +295,31 @@ func (m model) selectedItems() []finding {
 	return result
 }
 
+// A checked parent subsumes its descendants, exactly as a batch would, and a
+// remembered path carries no size until the current scan supplies one.
+func (m model) selectedTotals(selected []finding) (size int64, unavailable int) {
+	for _, f := range selected {
+		if found, ok := m.findingAt(f.Path); ok {
+			f = found
+		}
+		if f.Missing {
+			unavailable++
+			continue
+		}
+		covered := false
+		for _, other := range selected {
+			if other.Path != f.Path && withinPath(other.Path, f.Path) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			size += f.Size
+		}
+	}
+	return size, unavailable
+}
+
 func (m model) findingAt(path string) (finding, bool) {
 	for _, items := range [][]finding{m.children, m.result.Items} {
 		for _, f := range items {

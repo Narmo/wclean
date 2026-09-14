@@ -539,7 +539,21 @@ func safe(s string) string {
 }
 func (m model) filterLine(width int) string {
 	prefix := muted.Render("Filter: ")
-	suffix := muted.Render(fmt.Sprintf("  ·  %d checked", len(m.selectedItems())))
+	suffix := ""
+	// A running scan has no sizes or availability yet, so any total would be wrong.
+	if !m.scanning {
+		selected := m.selectedItems()
+		label := fmt.Sprintf("  ·  %d checked", len(selected))
+		if len(selected) > 0 {
+			size, unavailable := m.selectedTotals(selected)
+			label += " (" + human(size)
+			if unavailable > 0 {
+				label += fmt.Sprintf(", %d unavailable", unavailable)
+			}
+			label += ")"
+		}
+		suffix = muted.Render(label)
+	}
 	cursor := ""
 	if m.searching {
 		cursor = filterCursor.Render("█")

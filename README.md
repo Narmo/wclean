@@ -48,9 +48,10 @@ macOS may ask your terminal for Automation permission to control Finder on the f
 A successfully removed **Cache** entry is remembered by its exact path in `~/Library/Application Support/wclean/remembered-caches.json`. Leftovers and Storage are never learned automatically.
 
 - `[ ]` unchecked, `[x]` checked (possibly through an enclosing selection), `[~]` some descendants checked.
+- The filter line totals the selection as `4 checked (107 B, 1 unavailable)`. The size counts each checked parent once, never its subsumed descendants, and unavailable placeholders contribute nothing.
 - Space checks an item for this session, or clears that selection, its descendants, and any enclosing selection. Matching remembered rules are deleted immediately.
 - Remembered caches stay checked across scans. Missing paths **remain saved** and are retried every batch; unavailable ones appear as checked placeholders you can uncheck to forget.
-- Manual checks survive navigation and filtering but reset on rescan. Only successful Cache removal saves a path.
+- Manual checks survive navigation and filtering but reset on rescan. Only successful Cache removal saves a path. A successful removal also drops that path and its descendants from the current checks, so a removed Leftover never returns — it is neither checked nor remembered if its app is reinstalled.
 - `[b]` previews paths, sizes, missing entries, and errors. Checked parents subsume their children. Only `[y]` starts; removal is sequential with the usual per-item checks. Escape stops after the current item.
 
 `wclean clean` uses only remembered Cache paths, asks for `y` unless `--yes`, skips missing paths without forgetting them, and exits nonzero on errors. Symlinked, malformed, oversized, or non-cache preference entries are rejected, and a corrupt file is never overwritten with an empty set.

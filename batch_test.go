@@ -12,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestRememberMissingCachesAndForget(t *testing.T) {
@@ -281,5 +282,49 @@ func TestBatchDialogProgress(t *testing.T) {
 	m = updated.(model)
 	if m.batch.moved != 0 || m.batch.missing != 1 || m.batch.failures != 1 || m.busy {
 		t.Fatal("partial batch outcomes were lost")
+	}
+}
+
+func TestRemovedLeftoverLeavesSelection(t *testing.T) {
+	leftover := finding{Path: "/leftover", Kind: "Leftover", Size: 15}
+	child := finding{Path: "/leftover/child", Kind: "Leftover", Size: 5}
+	m := model{busy: true,
+		result:     scanResult{Items: []finding{leftover, child}},
+		checked:    map[string]finding{leftover.Path: leftover, child.Path: child},
+		remembered: map[string]bool{},
+	}
+	updated, _ := m.Update(trashMsg{path: leftover.Path})
+	m = updated.(model)
+	if len(m.checked) != 0 {
+		t.Fatalf("removed leftover and its descendants must leave the batch: %v", m.checked)
+	}
+	if len(m.remembered) != 0 {
+		t.Fatal("a leftover must never become a remembered cache rule")
+	}
+}
+
+func TestCheckedTotalInFilterLine(t *testing.T) {
+	parent := finding{Path: "/app", Kind: "Leftover", Size: 100}
+	child := finding{Path: "/app/data", Kind: "Leftover", Size: 30}
+	cache := finding{Path: "/cache", Kind: "Cache", Size: 7}
+	gone := finding{Path: "/gone", Kind: "Cache", Missing: true}
+	m := model{width: 90, height: 28,
+		result:     scanResult{Items: []finding{parent, child, cache, gone}},
+		checked:    map[string]finding{parent.Path: parent, child.Path: child},
+		remembered: map[string]bool{cache.Path: true, gone.Path: true},
+	}
+	if size, unavailable := m.selectedTotals(m.selectedItems()); size != 107 || unavailable != 1 {
+		t.Fatalf("parent must subsume its child, remembered paths sized, missing counted: %d %d", size, unavailable)
+	}
+	if line := ansi.Strip(m.filterLine(m.width)); !strings.Contains(line, "4 checked (107 B, 1 unavailable)") {
+		t.Fatalf("filter line lacks the checked total: %q", line)
+	}
+	m.scanning = true
+	if line := ansi.Strip(m.filterLine(m.width)); strings.Contains(line, "checked") {
+		t.Fatalf("totals are unknown until the scan completes: %q", line)
+	}
+	empty := model{width: 90, height: 28}
+	if line := ansi.Strip(empty.filterLine(empty.width)); !strings.Contains(line, "0 checked") || strings.Contains(line, "(") {
+		t.Fatalf("empty selection must not show a total: %q", line)
 	}
 }
