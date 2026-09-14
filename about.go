@@ -12,7 +12,7 @@ func (m model) popup(content string) string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func (m model) aboutView() string {
 	if m.width < 48 || m.height < 18 {
