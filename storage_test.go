@@ -33,10 +33,13 @@ func TestStorageDiscoveryAndDangerConfirmation(t *testing.T) {
 		"Library/Logs/app.log": 2,
 		".konan/config":        2, ".lldb/config": 2, ".m2/settings.xml": 2, ".gradle/gradle.properties": 2,
 		"Library/Caches/kitty/keep": 100,
+		"T/build-1234/obj":          3,
 	}
 	for path, size := range files {
 		writeTestFile(t, filepath.Join(home, path), strings.Repeat("x", size))
 	}
+	tempRoots = []struct{ path, label string }{{filepath.Join(home, "T"), "Temp"}}
+	t.Cleanup(func() { tempRoots = nil })
 	ctx := context.Background()
 	result := scanLibrary(ctx, home, appInventory{Incomplete: true})
 	if len(result.Warnings) != 0 {
@@ -72,7 +75,7 @@ func TestStorageDiscoveryAndDangerConfirmation(t *testing.T) {
 	if caches != 21 {
 		t.Fatalf("cache total includes protected data or duplicates: %d", caches)
 	}
-	for _, relative := range []string{"Library/Developer/Xcode/Archives", "Library/Developer/Xcode/iOS DeviceSupport", "Library/Developer/Xcode/macOS DeviceSupport", "Library/Developer/Xcode/iOS Device Logs", "Library/Containers/com.apple.CoreDevice.CoreDeviceService", "Library/Containers/com.apple.mediaanalysisd", "Library/Group Containers/group.com.example.shared", "Library/Logs", ".konan", ".lldb", ".m2", ".gradle"} {
+	for _, relative := range []string{"Library/Developer/Xcode/Archives", "Library/Developer/Xcode/iOS DeviceSupport", "Library/Developer/Xcode/macOS DeviceSupport", "Library/Developer/Xcode/iOS Device Logs", "Library/Containers/com.apple.CoreDevice.CoreDeviceService", "Library/Containers/com.apple.mediaanalysisd", "Library/Group Containers/group.com.example.shared", "Library/Logs", ".konan", ".lldb", ".m2", ".gradle", "T/build-1234"} {
 		f, ok := paths[filepath.Join(home, relative)]
 		if !ok || f.Kind != "Storage" {
 			t.Fatalf("missing inspection path: %s", relative)
@@ -142,7 +145,7 @@ func TestStorageDiscoveryAndDangerConfirmation(t *testing.T) {
 	if !strings.Contains(m.View(), "Suspected leftovers 0 B") {
 		t.Fatal("storage bytes leaked into leftover total")
 	}
-	if !strings.Contains(m.View(), "Storage 175 B") {
+	if !strings.Contains(m.View(), "Storage 178 B") {
 		t.Fatal("header must show the total of Storage findings")
 	}
 	for _, item := range m.visible() {
@@ -304,5 +307,23 @@ func TestStorageSymlinks(t *testing.T) {
 	result := scanLibrary(context.Background(), home, appInventory{})
 	if len(result.Items) != 1 || result.Items[0].Kind != "Storage" || result.Items[0].Size != 0 || len(result.Warnings) == 0 {
 		t.Fatalf("followed a storage/cache symlink: %+v", result)
+	}
+}
+
+func TestTempEntriesMustBeOwned(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "mine"), "x")
+	mine, err := os.ReadDir(dir)
+	if err != nil || len(mine) != 1 || !ownedByUser(mine[0]) {
+		t.Fatalf("own temp entry rejected: %v", err)
+	}
+	system, err := os.ReadDir("/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range system {
+		if entry.Name() == "usr" && ownedByUser(entry) {
+			t.Fatal("root-owned entry accepted")
+		}
 	}
 }

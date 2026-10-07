@@ -842,6 +842,15 @@ func main() {
 		}
 		return
 	}
+	// getconf, unlike $TMPDIR, cannot be pointed at an arbitrary directory.
+	for _, dir := range []struct{ name, label string }{{"DARWIN_USER_TEMP_DIR", "Temp"}, {"DARWIN_USER_CACHE_DIR", "Temp cache"}} {
+		if out, err := exec.Command("/usr/bin/getconf", dir.name).Output(); err == nil {
+			if path, err := filepath.EvalSymlinks(strings.TrimSpace(string(out))); err == nil {
+				tempRoots = append(tempRoots, struct{ path, label string }{path, dir.label})
+			}
+		}
+	}
+	tempRoots = append(tempRoots, struct{ path, label string }{"/private/tmp", "tmp"})
 	remembered, memoryErr := loadMemory(home)
 	m := model{ctx: ctx, home: home, roots: roots, scanning: true, remembered: remembered, memoryError: memoryErr}
 	if _, err = tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {

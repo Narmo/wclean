@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"syscall"
 )
 
 var storageFolders = []string{"Developer/Xcode", "Containers", "Group Containers"}
+
+// System temp directories, symlink-resolved; main fills them, so tests never
+// scan the real ones. Live locks and database journals make them Storage.
+var tempRoots []struct{ path, label string }
 var storageTrees = []struct{ path, label string }{
 	{"Library/Logs", "Diagnostic logs"},
 	{".konan", "Kotlin/Native data"},
@@ -26,20 +32,39 @@ func storageRoot(home, path string) bool {
 			return true
 		}
 	}
-	for _, folder := range storageFolders {
-		if filepath.Dir(path) == filepath.Join(home, "Library", folder) && !strings.HasPrefix(filepath.Base(path), ".") {
+	for _, folder := range storageDirs(home) {
+		if filepath.Dir(path) == folder.path && !strings.HasPrefix(filepath.Base(path), ".") {
 			return true
 		}
 	}
 	return false
 }
 
-func (result *scanResult) scanStorage(ctx context.Context, home string) {
+func storageDirs(home string) []struct{ path, label string } {
+	var dirs []struct{ path, label string }
 	for _, folder := range storageFolders {
+		dirs = append(dirs, struct{ path, label string }{filepath.Join(home, "Library", folder), filepath.Base(folder)})
+	}
+	return append(dirs, tempRoots...)
+}
+
+// The sticky /private/tmp lets only an entry's owner move it, so other users'
+// temp data is neither listed nor walked.
+func ownedByUser(entry os.DirEntry) bool {
+	info, err := entry.Info()
+	if err != nil {
+		return false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && int(stat.Uid) == os.Getuid()
+}
+
+func (result *scanResult) scanStorage(ctx context.Context, home string) {
+	for _, folder := range storageDirs(home) {
 		if ctx.Err() != nil {
 			return
 		}
-		root := filepath.Join(home, "Library", folder)
+		root := folder.path
 		real, err := filepath.EvalSymlinks(root)
 		if os.IsNotExist(err) {
 			continue
@@ -57,18 +82,18 @@ func (result *scanResult) scanStorage(ctx context.Context, home string) {
 			if ctx.Err() != nil {
 				return
 			}
-			if strings.HasPrefix(entry.Name(), ".") || entry.Type()&os.ModeSymlink != 0 {
+			if strings.HasPrefix(entry.Name(), ".") || entry.Type()&os.ModeSymlink != 0 || slices.Contains(tempRoots, folder) && !ownedByUser(entry) {
 				continue
 			}
 			path := filepath.Join(root, entry.Name())
 			if label, _ := cacheDetails(home, path); label != "" {
 				continue
 			} // Already listed as a cache, e.g. DerivedData.
-			label := filepath.Base(folder) + " / " + entry.Name()
+			label := folder.label + " / " + entry.Name()
 			if err := result.addStorage(ctx, path, label); err != nil {
 				return
 			}
-			if folder == "Containers" && entry.IsDir() {
+			if root == filepath.Join(home, "Library/Containers") && entry.IsDir() {
 				if err := result.addCache(ctx, home, filepath.Join(path, "Data/Library/Caches")); err != nil {
 					return
 				}
