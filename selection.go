@@ -34,7 +34,7 @@ func cacheRootFor(home, path string) (string, error) {
 		}
 	}
 	for _, target := range cacheTargets {
-		root := filepath.Join(home, "Library", target.path)
+		root := filepath.Join(home, target.path)
 		if withinPath(root, path) {
 			return root, nil
 		}

@@ -63,6 +63,7 @@ A successfully removed **Cache** entry is remembered by its exact path in `~/Lib
 - `~/Library/Caches`: every immediate entry except `kitty`.
 - Named app caches: `Cache`, `Code Cache`, `GPUCache` under `Application Support/Code`, `discord`, `Claude`, and Slack's container, plus VS Code's `CachedData`/`CachedExtensionVSIXs` and `Arduino15/staging`.
 - Xcode `DerivedData` and `DocumentationCache`.
+- Exact home-directory caches listed below, never entire dot-directories or arbitrary folders named `cache`.
 - Container caches at `~/Library/Containers/<bundle-ID>/Data/Library/Caches` for non-Apple IDs.
 - **Leftover** candidates: reverse-DNS entries in `Preferences`, `Application Support`, and `Saved Application State` with no matching installed bundle ID, plus superseded JetBrains/Google IDE version folders. Two-component IDs count only behind a TLD-like first label (`org.example`, never `krita.log`). A human-named entry qualifies only when it exactly matches the trailing component of such an unclaimed ID — `org.example.plist` vouches for a sibling folder named `example` — and never when that component is short or shared with an installed app. Because any framework, installer, or JVM can write a preference domain, a `Preferences` or `Saved Application State` entry is reported only beside the `Application Support` leftover it accompanies. Also excluded: Apple and app-group domains (`group.com.apple.mail`), IDs inside an installed app's own namespace (`com.vendor.app.helper` while `com.vendor.app` is installed), unvouched human-named folders, and directories referenced by an installed IDE's `product-info.json`.
 - App inventory: `/Applications`, `/System/Applications`, `/System/Library/CoreServices`, `~/Applications`, and `--apps` locations, read with `plutil`. An unreadable location, a malformed `Info.plist`, or a non-string `CFBundleIdentifier` disables leftover detection for that scan; a readable bundle that declares no `CFBundleIdentifier` at all owns no reverse-DNS data and is skipped with a warning instead.
@@ -74,7 +75,25 @@ Absence of a matching bundle ID is evidence for review, not proof that deletion 
 
 Before each removal wclean rechecks the category boundary, canonical parent, item identity, modification time, size, scan completeness, ancestors up to the detected root, and IDE ownership. Finder then performs the native Trash operation, preserving Put Back metadata. This is **not an atomic transaction** — do not use it on adversarial or shared writable trees.
 
-Never touched: `/Library`, Mail, Photos, browser history, Keychains, backups, the Trash itself, hidden top-level entries, and redirected category folders. No background cleanup.
+Never touched: `/Library`, Mail, Photos, browser history, Keychains, backups, the Trash itself, unlisted hidden top-level entries, and redirected category folders. No background cleanup.
+
+### Home-directory cache policy
+
+Only the exact paths in the middle column are Cache targets. Unknown siblings stay excluded, even under `~/.cache`; symlinked targets or ancestors are refused. Quit the owning tools and stop builds/downloads before cleanup. Cache removal may require network access and regeneration on the next run.
+
+| Home directory | Cache targets (relative to home) | Kept out of cache cleanup |
+| --- | --- | --- |
+| `.android` | `.android/cache` (SDK repository metadata) | AVDs and their disks/snapshots, SDK/CLI installs, ADB keys, debug keystore, settings |
+| `.cache` | `.cache/gh`, `.cache/fontconfig`, `.cache/mesa_shader_cache` | Unknown caches, Codex runtimes, Claude installer staging, Firebase emulator downloads |
+| `.claude` | `.claude/cache` (metadata) | Credentials, settings, projects, sessions/history, backups, paste cache, plugins (including `plugins/cache`), skills |
+| `.codex` | `.codex/cache` (metadata and downloaded assets) | Auth/config, sessions, memories/databases, generated images, shell snapshots, plugins, packages and runtimes |
+| `.npm` | `.npm/_cacache` (download cache) | `_npx` execution environments, credentials/config and logs |
+| `.m2` | None | Repository can contain locally installed, unpublished artifacts; settings can contain credentials. Remains **Storage**, requiring danger confirmation, never remembered as a cache. |
+| `.local` | `.local/pipx/.cache` (temporary `pipx run` environments; stop running commands first) | Installed pipx venvs/shared Python, `bin`, application `share` and `state` data |
+| `.pi` | None verified | Sessions, auth/settings, extensions, skills, Git/npm packages and installed releases |
+| `.vscode` | None verified | Extensions, CLI installs, agent plugins and configuration. VS Code's verified caches under `~/Library/Application Support/Code` are already included. |
+
+This is an allowlist, not a promise that every application stores only disposable data in a cache path. Review the contents before confirming; Finder Trash remains recoverable until emptied.
 
 ## AI explanations
 
@@ -92,7 +111,7 @@ Bubble Tea handles input and async work; Lip Gloss supplies the adaptive palette
 
 The UI separates **cache data**, **suspected leftovers**, **storage**, and **warnings** instead of one "junk" score. No reclaimed-space promises or health ratings. Failed removals stay visible for retry.
 
-Possible next steps: a persistent ignore list, ownership history recorded while apps are installed, a large/old files explorer, simulator and package-manager caches, duplicate review, an app uninstall preview, and a read-only startup-item overview. Malware scanning, "RAM cleaning", and blanket maintenance scripts are out of scope.
+Possible next steps: a persistent ignore list, ownership history recorded while apps are installed, a large/old files explorer, additional verified simulator and package-manager caches, duplicate review, an app uninstall preview, and a read-only startup-item overview. Malware scanning, "RAM cleaning", and blanket maintenance scripts are out of scope.
 
 ## Development
 

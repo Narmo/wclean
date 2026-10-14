@@ -26,6 +26,7 @@ type scanResult struct {
 }
 
 var libraryFolders = []string{"Caches", "Preferences", "Application Support", "Saved Application State", "Application Support/JetBrains", "Application Support/Google"}
+
 // Two-component IDs are accepted only behind a TLD-like first label, which
 // keeps org.example apart from krita.log or default.store.
 var bundleID = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9_-]+){2,}|[A-Za-z]{2,4}\.[A-Za-z0-9_-]+)$`)
@@ -293,8 +294,8 @@ func validateRoot(home string, f finding) error {
 			}
 		}
 	}
-	if !allowed || strings.HasPrefix(filepath.Base(f.Path), ".") {
-		return fmt.Errorf("refusing path outside scanned Library categories")
+	if !allowed || label == "" && strings.HasPrefix(filepath.Base(f.Path), ".") {
+		return fmt.Errorf("refusing path outside scanned categories")
 	}
 	return nil
 }

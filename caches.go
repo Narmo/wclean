@@ -8,37 +8,48 @@ import (
 	"strings"
 )
 
-// Exact locations only. In particular, Service Worker storage, user profiles,
+// Exact home-relative locations only. In particular, Service Worker storage, user profiles,
 // backups, histories, and installed packages are not ordinary disposable caches.
 var cacheTargets = []struct{ path, label string }{
-	{"Application Support/Code/Cache", "VS Code / Cache"},
-	{"Application Support/Code/Code Cache", "VS Code / Code Cache"},
-	{"Application Support/Code/GPUCache", "VS Code / GPUCache"},
-	{"Application Support/Code/CachedData", "VS Code / CachedData"},
-	{"Application Support/Code/CachedExtensionVSIXs", "VS Code / Extension downloads"},
-	{"Application Support/discord/Cache", "Discord / Cache"},
-	{"Application Support/discord/Code Cache", "Discord / Code Cache"},
-	{"Application Support/discord/GPUCache", "Discord / GPUCache"},
-	{"Application Support/Claude/Cache", "Claude / Cache"},
-	{"Application Support/Claude/Code Cache", "Claude / Code Cache"},
-	{"Application Support/Claude/GPUCache", "Claude / GPUCache"},
-	{"Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/Cache", "Slack / Cache"},
-	{"Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/Code Cache", "Slack / Code Cache"},
-	{"Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/GPUCache", "Slack / GPUCache"},
-	{"Arduino15/staging", "Arduino / Download staging"},
-	{"Developer/Xcode/DerivedData", "Xcode / DerivedData"},
-	{"Developer/Xcode/DocumentationCache", "Xcode / Documentation downloads"},
+	{"Library/Application Support/Code/Cache", "VS Code / Cache"},
+	{"Library/Application Support/Code/Code Cache", "VS Code / Code Cache"},
+	{"Library/Application Support/Code/GPUCache", "VS Code / GPUCache"},
+	{"Library/Application Support/Code/CachedData", "VS Code / CachedData"},
+	{"Library/Application Support/Code/CachedExtensionVSIXs", "VS Code / Extension downloads"},
+	{"Library/Application Support/discord/Cache", "Discord / Cache"},
+	{"Library/Application Support/discord/Code Cache", "Discord / Code Cache"},
+	{"Library/Application Support/discord/GPUCache", "Discord / GPUCache"},
+	{"Library/Application Support/Claude/Cache", "Claude / Cache"},
+	{"Library/Application Support/Claude/Code Cache", "Claude / Code Cache"},
+	{"Library/Application Support/Claude/GPUCache", "Claude / GPUCache"},
+	{"Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/Cache", "Slack / Cache"},
+	{"Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/Code Cache", "Slack / Code Cache"},
+	{"Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/GPUCache", "Slack / GPUCache"},
+	{"Library/Arduino15/staging", "Arduino / Download staging"},
+	{"Library/Developer/Xcode/DerivedData", "Xcode / DerivedData"},
+	{"Library/Developer/Xcode/DocumentationCache", "Xcode / Documentation downloads"},
+	{".android/cache", "Android / SDK repository cache"},
+	{".cache/gh", "GitHub CLI / HTTP cache"},
+	{".cache/fontconfig", "Fontconfig / Font cache"},
+	{".cache/mesa_shader_cache", "Mesa / Shader cache"},
+	{".claude/cache", "Claude Code / Metadata cache"},
+	{".codex/cache", "Codex / Metadata and asset cache"},
+	{".npm/_cacache", "npm / Package download cache"},
+	{".local/pipx/.cache", "pipx / Temporary run environments"},
 }
 
 func cacheDetails(home, path string) (label, reason string) {
 	for _, target := range cacheTargets {
-		if path == filepath.Join(home, "Library", target.path) {
+		if path == filepath.Join(home, target.path) {
 			reason = "Explicit application cache; quit the app and stop downloads first. Data may be regenerated or downloaded again."
-			if target.path == "Developer/Xcode/DerivedData" {
+			if target.path == "Library/Developer/Xcode/DerivedData" {
 				reason = "Generated Xcode build data and indexes; quit Xcode and stop builds first. Rebuilding and indexing will take time."
 			}
-			if target.path == "Developer/Xcode/DocumentationCache" {
+			if target.path == "Library/Developer/Xcode/DocumentationCache" {
 				reason = "Downloaded Xcode documentation; quit Xcode first. Documentation may need downloading again."
+			}
+			if target.path == ".local/pipx/.cache" {
+				reason = "Temporary pipx run environments, not installed pipx tools; stop all pipx-run commands first. Environments will need downloading and creating again."
 			}
 			return target.label, reason
 		}
@@ -53,7 +64,7 @@ func cacheDetails(home, path string) (label, reason string) {
 
 func (result *scanResult) scanAppCaches(ctx context.Context, home string) {
 	for _, target := range cacheTargets {
-		if err := result.addCache(ctx, home, filepath.Join(home, "Library", target.path)); err != nil {
+		if err := result.addCache(ctx, home, filepath.Join(home, target.path)); err != nil {
 			return
 		}
 	}
