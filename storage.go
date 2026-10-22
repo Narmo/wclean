@@ -10,13 +10,21 @@ import (
 	"syscall"
 )
 
-var storageFolders = []string{"Developer/Xcode", "Containers", "Group Containers"}
+// Scanned entry by entry, so never listed or removed whole.
+var nestedStorageFolders = []string{"Developer/Xcode", "Developer/Shared"}
+var storageFolders = slices.Concat(nestedStorageFolders, []string{"Developer", "Containers", "Group Containers"})
+
+func nestedStorageFolder(home, path string) bool {
+	return slices.ContainsFunc(nestedStorageFolders, func(folder string) bool { return path == filepath.Join(home, "Library", folder) })
+}
 
 // System temp directories, symlink-resolved; main fills them, so tests never
 // scan the real ones. Live locks and database journals make them Storage.
 var tempRoots []struct{ path, label string }
-var storageTrees = []struct{ path, label string }{
-	{"Library/Logs", "Diagnostic logs"},
+var storageTrees = slices.Concat([]struct{ path, label string }{{"Library/Logs", "Diagnostic logs"}}, developerTrees)
+
+// Listed under Developer, still with a danger confirmation.
+var developerTrees = []struct{ path, label string }{
 	{".konan", "Kotlin/Native data"},
 	{".lldb", "LLDB data"},
 	{".m2", "Maven data"},
@@ -33,11 +41,11 @@ func storageRoot(home, path string) bool {
 		}
 	}
 	for _, folder := range storageDirs(home) {
-		if filepath.Dir(path) == folder.path && !strings.HasPrefix(filepath.Base(path), ".") {
+		if filepath.Dir(path) == folder.path && !strings.HasPrefix(filepath.Base(path), ".") && !nestedStorageFolder(home, path) {
 			return true
 		}
 	}
-	return false
+	return expandedRoot(home, path)
 }
 
 func storageDirs(home string) []struct{ path, label string } {
@@ -57,6 +65,14 @@ func ownedByUser(entry os.DirEntry) bool {
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	return ok && int(stat.Uid) == os.Getuid()
+}
+
+// CoreDevice's DeviceFS, for one, mounts a live view of booted simulators
+// inside ~/Library/Developer; walking it would count their data again.
+func mountedBelow(parent, child os.FileInfo) bool {
+	p, ok := parent.Sys().(*syscall.Stat_t)
+	c, ok2 := child.Sys().(*syscall.Stat_t)
+	return ok && ok2 && p.Dev != c.Dev
 }
 
 func (result *scanResult) scanStorage(ctx context.Context, home string) {
@@ -86,11 +102,20 @@ func (result *scanResult) scanStorage(ctx context.Context, home string) {
 				continue
 			}
 			path := filepath.Join(root, entry.Name())
+			if nestedStorageFolder(home, path) {
+				continue
+			}
 			if label, _ := cacheDetails(home, path); label != "" {
 				continue
 			} // Already listed as a cache, e.g. DerivedData.
+			if entry.IsDir() && expandedFolder(home, path) {
+				if err := result.scanXcodeFolder(ctx, home, path); err != nil {
+					return
+				}
+				continue
+			}
 			label := folder.label + " / " + entry.Name()
-			if err := result.addStorage(ctx, path, label); err != nil {
+			if err := result.addStorage(ctx, home, path, label, storageReason); err != nil {
 				return
 			}
 			if root == filepath.Join(home, "Library/Containers") && entry.IsDir() {
@@ -101,13 +126,13 @@ func (result *scanResult) scanStorage(ctx context.Context, home string) {
 		}
 	}
 	for _, tree := range storageTrees {
-		if err := result.addStorage(ctx, filepath.Join(home, tree.path), tree.label); err != nil {
+		if err := result.addStorage(ctx, home, filepath.Join(home, tree.path), tree.label, storageReason); err != nil {
 			return
 		}
 	}
 }
 
-func (result *scanResult) addStorage(ctx context.Context, path, label string) error {
+func (result *scanResult) addStorage(ctx context.Context, home, path, label, reason string) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -125,5 +150,5 @@ func (result *scanResult) addStorage(ctx context.Context, path, label string) er
 		return nil
 	}
 	// ponytail: inclusive container sizes rewalk known cache trees; combine the walks if profiling shows this dominates scan time.
-	return result.addFinding(ctx, finding{Path: path, Kind: "Storage", Label: label, Reason: storageReason, info: info})
+	return result.addFinding(ctx, finding{Path: path, Kind: category(home, path, "Storage"), Danger: true, Label: label, Reason: reason, info: info})
 }

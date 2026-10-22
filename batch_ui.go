@@ -162,7 +162,7 @@ func (m model) batchLines() []string {
 	if m.batch.stage != batchPreparing {
 		text = "Close owning apps first. Parents include their contents; overlapping selections are removed only once. Missing remembered paths stay saved.\n"
 		for _, item := range m.batch.items {
-			if item.finding.Kind == "Storage" {
+			if item.finding.Danger {
 				text = storageWarning + "\n" + text
 				break
 			}
@@ -220,8 +220,8 @@ func (m model) batchView() string {
 	add(accent.Render(title))
 	notice := "Only [y] starts removal; Enter cancels."
 	for _, item := range b.items {
-		if item.finding.Kind == "Storage" {
-			notice = "DANGER: includes unverified Storage"
+		if item.finding.Danger {
+			notice = "DANGER: includes [danger] items"
 			break
 		}
 	}

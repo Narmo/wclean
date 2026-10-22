@@ -33,7 +33,6 @@ func TestExplicitAppCaches(t *testing.T) {
 		".codex", ".codex/auth.json", ".codex/config.toml", ".codex/sessions", ".codex/archived_sessions",
 		".codex/sqlite", ".codex/generated_images", ".codex/shell_snapshots", ".codex/plugins/cache", ".codex/packages",
 		".npm", ".npm/_npx", ".npm/_cacache-backup", ".npmrc",
-		".m2", ".m2/repository/local-artifact", ".m2/settings.xml",
 		".local", ".local/bin", ".local/share", ".local/state", ".local/pipx/venvs", ".local/pipx/shared",
 		".local/pipx/.cache-backup",
 		".pi", ".pi/agent/auth.json", ".pi/agent/settings.json", ".pi/agent/sessions",
@@ -45,14 +44,22 @@ func TestExplicitAppCaches(t *testing.T) {
 	}
 	// Application cache rules still operate when leftover ownership is unknown.
 	result := scanLibrary(context.Background(), home, appInventory{Incomplete: true})
-	cached := model{result: result, tab: 1}
-	cacheItems := cached.visible()
+	var cacheItems []finding
+	for _, f := range result.Items {
+		if f.rememberable(home) {
+			cacheItems = append(cacheItems, f)
+		}
+	}
 	if len(result.Warnings) != 0 || len(cacheItems) != len(cacheTargets) {
 		t.Fatalf("unexpected cache scan: %+v", result)
 	}
+	// Developer tool caches move to their own tab.
+	if len(model{result: result, tab: 1}.visible()) != len(cacheTargets)-len(developerCaches) || len(model{result: result, tab: 4}.visible()) != len(developerCaches) {
+		t.Fatal("developer caches were not separated from app caches")
+	}
 	var total int64
 	for _, f := range cacheItems {
-		if f.Kind != "Cache" || f.Label == "" || f.Size != 4 {
+		if f.Kind != "Cache" && f.Kind != "Developer" || f.Label == "" || f.Size != 4 {
 			t.Fatalf("bad cache finding: %+v", f)
 		}
 		total += f.Size
@@ -68,7 +75,7 @@ func TestExplicitAppCaches(t *testing.T) {
 		}
 		for _, item := range []finding{f, children.Items[0]} {
 			resolved, err := resolveCache(context.Background(), home, item.Path)
-			if err != nil || resolved.Size != 4 || resolved.Kind != "Cache" {
+			if err != nil || resolved.Size != 4 || resolved.Kind != f.Kind {
 				t.Fatalf("remembered cache resolution failed for %s: %v", item.Path, err)
 			}
 		}

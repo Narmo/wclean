@@ -17,6 +17,7 @@ type finding struct {
 	Path, Kind, Reason, Label string
 	Size                      int64
 	Incomplete, Missing       bool
+	Danger                    bool // Unverified data: danger confirmation, never remembered.
 	info                      os.FileInfo
 	parent                    *finding // Browsed children remain anchored to their detected root.
 }
@@ -144,6 +145,9 @@ func scanLibrary(ctx context.Context, home string, installed appInventory) scanR
 			if !info.IsDir() && !info.Mode().IsRegular() {
 				continue
 			}
+			if kind == "Cache" {
+				kind = category(home, path, kind)
+			}
 			if err := result.addFinding(ctx, finding{Path: path, Kind: kind, Reason: reason, info: info}); err != nil {
 				return result
 			}
@@ -221,9 +225,22 @@ func leftoverTokens(home string, installed appInventory) map[string]string {
 }
 
 func (result *scanResult) addFinding(ctx context.Context, f finding) error {
+	if parent, err := os.Lstat(filepath.Dir(f.Path)); err == nil && f.info != nil && mountedBelow(parent, f.info) {
+		result.Warnings = append(result.Warnings, "Skipped mounted filesystem: "+f.Path)
+		return nil
+	}
 	err := filepath.WalkDir(f.Path, func(path string, d fs.DirEntry, walkErr error) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		// A mount inside the finding holds no local data of its own, and Finder
+		// cannot move it with its parent.
+		if walkErr == nil && d.IsDir() && path != f.Path && f.info != nil {
+			if info, err := d.Info(); err == nil && mountedBelow(f.info, info) {
+				f.Incomplete = true
+				result.Warnings = append(result.Warnings, "Skipped mounted filesystem; its parent cannot be removed whole: "+path)
+				return filepath.SkipDir
+			}
 		}
 		if walkErr == nil && d.Type().IsRegular() {
 			var info os.FileInfo
@@ -264,7 +281,7 @@ func (f finding) origin() finding {
 // A cache entered from Storage has its own removal boundary, while retaining
 // the full parent chain for filesystem identity checks.
 func (f finding) removalRoot() finding {
-	for f.parent != nil && f.parent.Kind == f.Kind {
+	for f.parent != nil && f.parent.Kind == f.Kind && f.parent.Danger == f.Danger {
 		f = *f.parent
 	}
 	return f
@@ -274,11 +291,14 @@ func validateRoot(home string, f finding) error {
 	if f.Path == filepath.Join(home, "Library/Caches/kitty") {
 		return fmt.Errorf("Kitty cache is excluded")
 	}
-	if f.Kind == "Storage" && storageRoot(home, f.Path) {
+	if f.Danger && storageRoot(home, f.Path) {
 		return nil
 	}
 	parent := filepath.Dir(f.Path)
 	label, _ := cacheDetails(home, f.Path)
+	if label == "" && versionedRoot(home, f.Path) == f.Path {
+		return fmt.Errorf("no longer an older Xcode version; rescan")
+	}
 	allowed := label != ""
 	for _, folder := range libraryFolders {
 		if parent == filepath.Join(home, "Library", folder) {

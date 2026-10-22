@@ -90,7 +90,7 @@ func (m model) visible() []finding {
 		source = m.children
 	}
 	for _, f := range source {
-		if m.directory == nil && (m.tab == 1 && f.Kind != "Cache" || m.tab == 2 && f.Kind != "Leftover" || m.tab == 3 && f.Kind != "Storage") {
+		if m.directory == nil && (m.tab == 1 && f.Kind != "Cache" || m.tab == 2 && f.Kind != "Leftover" || m.tab == 3 && f.Kind != "Storage" || m.tab == 4 && f.Kind != "Developer") {
 			continue
 		}
 		if strings.Contains(strings.ToLower(f.Path+" "+f.Label), strings.ToLower(m.query)) {
@@ -160,8 +160,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if !strings.HasPrefix(m.status, "Moved to Trash.") {
 				m.status = "Directory loaded. d removes only the focused entry."
-				if msg.dir.Kind == "Storage" {
-					m.status = "Storage may contain valuable data. [d] opens a danger confirmation."
+				if msg.dir.Danger {
+					m.status = "Unverified data may be valuable. [d] opens a danger confirmation."
 				}
 			}
 		}
@@ -340,7 +340,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.query = ""
 			}
 			m.directory, m.children = nil, nil
-			m.tab = (m.tab + 1) % 4
+			m.tab = (m.tab + 1) % 5
 			m.cursor = 0
 			m.showWarnings = false
 		case "shift+tab", "h":
@@ -348,7 +348,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.query = ""
 			}
 			m.directory, m.children = nil, nil
-			m.tab = (m.tab + 3) % 4
+			m.tab = (m.tab + 4) % 5
 			m.cursor = 0
 			m.showWarnings = false
 		case "/":
@@ -490,7 +490,7 @@ func findingRow(f finding) string {
 	if f.info != nil && f.info.IsDir() {
 		name += "/"
 	}
-	if f.Kind == "Storage" {
+	if f.Danger {
 		name += " " + danger.Bold(true).Render("[danger]")
 	}
 	return fmt.Sprintf("%11s  %-9s %s", size, f.Kind, name)
@@ -610,7 +610,7 @@ func (m model) View() string {
 		add(prefix + divider.Render(strings.Repeat("─", width-ansi.StringWidth(prefix))))
 	}
 	header := []string{accent.Render("wclean") + muted.Render("  /  a little room to breathe")}
-	var caches, leftovers, storage int64
+	var caches, leftovers, storage, developer int64
 	for _, f := range m.result.Items {
 		if f.Kind == "Cache" {
 			caches += f.Size
@@ -618,10 +618,12 @@ func (m model) View() string {
 			leftovers += f.Size
 		} else if f.Kind == "Storage" {
 			storage += f.Size
+		} else if f.Kind == "Developer" {
+			developer += f.Size
 		}
 	}
-	header = append(header, fmt.Sprintf("Caches %s  ·  Suspected leftovers %s  ·  Storage %s", human(caches), human(leftovers), human(storage)))
-	tabs := []string{"All", "Caches", "Leftovers", "Storage"}
+	header = append(header, fmt.Sprintf("Caches %s  ·  Suspected leftovers %s  ·  Storage %s  ·  Developer %s", human(caches), human(leftovers), human(storage), human(developer)))
+	tabs := []string{"All", "Caches", "Leftovers", "Storage", "Developer"}
 	for i, t := range tabs {
 		if i == m.tab {
 			tabs[i] = accent.Render("[" + t + "]")
@@ -707,7 +709,7 @@ func (m model) View() string {
 		// Reveal and the confirmation show the unabridged path.
 		path := safe(strings.TrimPrefix(f.Path, m.home) + "  [o: reveal]")
 		add(muted.Render(m.scrollText("~"+path, width)))
-		if f.Kind == "Storage" {
+		if f.Danger {
 			add(danger.Render(m.scrollText(safe(f.Reason), width)))
 		} else {
 			add(warning.Render(m.scrollText(safe(f.Reason), width)))
@@ -749,9 +751,9 @@ func (m model) confirmation() string {
 	f := items[m.cursor]
 	title := "Move this one item to Trash?"
 	disclaimer := warning.Render("Close its app first. Settings, offline files, and other valuable data may be inside. A leftover candidate is not proof of abandonment.")
-	if f.Kind == "Storage" {
-		title = "Danger: remove unverified storage?"
-		disclaimer = danger.Render(storageWarning)
+	if f.Danger {
+		title = "Danger: remove unverified data?"
+		disclaimer = danger.Render(safe(f.Reason))
 	}
 	rule := divider.Render(strings.Repeat("─", max(1, m.width-4)))
 	text := strings.Join([]string{

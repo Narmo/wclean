@@ -46,7 +46,7 @@ func prepareBatch(ctx context.Context, home string, selected []finding) []batchI
 		item := batchItem{finding: f}
 		if ctx.Err() != nil {
 			item.err = ctx.Err()
-		} else if f.Kind == "Cache" {
+		} else if f.rememberable(home) {
 			resolved, err := resolveCache(ctx, home, f.Path)
 			if err == nil {
 				item.finding = resolved
@@ -107,7 +107,11 @@ func cleanRemembered(ctx context.Context, home string, in io.Reader, out io.Writ
 			fmt.Fprintf(out, "MISSING %q (retained for future batches)\n", item.finding.Path)
 		default:
 			available++
-			fmt.Fprintf(out, "%s  %q\n", human(item.finding.Size), item.finding.Path)
+			marker := ""
+			if item.finding.Danger {
+				marker = "  [danger]"
+			}
+			fmt.Fprintf(out, "%s  %q%s\n", human(item.finding.Size), item.finding.Path, marker)
 		}
 	}
 	if available > 0 {

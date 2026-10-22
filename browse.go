@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 func readDirectory(ctx context.Context, home string, dir finding) (finding, scanResult, error) {
@@ -39,11 +40,17 @@ func readDirectory(ctx context.Context, home string, dir finding) (finding, scan
 			continue
 		}
 		// Include hidden children: they were already counted inside the finding.
-		child := finding{Path: path, Kind: dir.Kind, Reason: dir.Reason, info: info, parent: &dir}
-		if dir.Kind == "Storage" && info.IsDir() {
+		child := finding{Path: path, Kind: dir.Kind, Danger: dir.Danger, Reason: dir.Reason, info: info, parent: &dir}
+		if dir.Danger && info.IsDir() {
 			if label, reason := cacheDetails(home, path); label != "" {
-				child.Kind, child.Label, child.Reason = "Cache", label, reason
+				child.Kind, child.Danger, child.Label, child.Reason = category(home, path, "Cache"), false, label, reason
 			}
+		}
+		if dir.Path == filepath.Join(home, xcodeData, "DerivedData") && info.IsDir() {
+			child.Label, child.Reason = derivedDataDetails(ctx, home, path, child.Reason)
+		}
+		if slices.ContainsFunc(simulatorSets, func(set string) bool { return dir.Path == filepath.Join(home, set) }) && info.IsDir() {
+			child.Label, child.Reason = simulatorDetails(ctx, path, child.Reason)
 		}
 		if err := result.addFinding(ctx, child); err != nil {
 			return dir, result, err

@@ -52,13 +52,13 @@ func TestStorageDiscoveryAndDangerConfirmation(t *testing.T) {
 			t.Fatalf("duplicate finding: %s", f.Path)
 		}
 		paths[f.Path] = f
-		if f.Kind == "Cache" {
+		if !f.Danger {
 			caches += f.Size
 			if err := validateRemoval(ctx, home, nil, f); err != nil {
 				t.Fatal(err)
 			}
 		} else {
-			if f.Kind != "Storage" {
+			if f.Kind != "Storage" && f.Kind != "Developer" {
 				t.Fatalf("storage misclassified: %+v", f)
 			}
 			if _, err := validateLocation(home, f); err != nil {
@@ -75,10 +75,20 @@ func TestStorageDiscoveryAndDangerConfirmation(t *testing.T) {
 	if caches != 21 {
 		t.Fatalf("cache total includes protected data or duplicates: %d", caches)
 	}
-	for _, relative := range []string{"Library/Developer/Xcode/Archives", "Library/Developer/Xcode/iOS DeviceSupport", "Library/Developer/Xcode/macOS DeviceSupport", "Library/Developer/Xcode/iOS Device Logs", "Library/Containers/com.apple.CoreDevice.CoreDeviceService", "Library/Containers/com.apple.mediaanalysisd", "Library/Group Containers/group.com.example.shared", "Library/Logs", ".konan", ".lldb", ".m2", ".gradle", "T/build-1234"} {
+	// Archives and versioned folders are listed per entry; unrecognized entries keep the danger grade.
+	for _, relative := range []string{"Library/Developer/Xcode/Archives/release.xcarchive", "Library/Developer/Xcode/Products", "Library/Developer/Xcode/iOS DeviceSupport/symbols", "Library/Developer/Xcode/macOS DeviceSupport/symbols", "Library/Developer/Xcode/iOS Device Logs/log", "Library/Containers/com.apple.CoreDevice.CoreDeviceService", "Library/Containers/com.apple.mediaanalysisd", "Library/Group Containers/group.com.example.shared", "Library/Logs", ".konan", ".lldb", ".m2", ".gradle", "T/build-1234"} {
 		f, ok := paths[filepath.Join(home, relative)]
-		if !ok || f.Kind != "Storage" {
+		want := "Storage"
+		if strings.HasPrefix(relative, "Library/Developer") || strings.HasPrefix(relative, ".") {
+			want = "Developer"
+		}
+		if !ok || !f.Danger || f.Kind != want {
 			t.Fatalf("missing inspection path: %s", relative)
+		}
+	}
+	for _, relative := range []string{"Library/Developer/Xcode/Archives", "Library/Developer/Xcode/iOS DeviceSupport", "Library/Developer/Xcode/iOS Device Logs"} {
+		if _, ok := paths[filepath.Join(home, relative)]; ok {
+			t.Fatalf("expanded folder listed whole: %s", relative)
 		}
 	}
 	if _, ok := paths[filepath.Join(home, "Library/Caches/kitty")]; ok {
@@ -145,7 +155,7 @@ func TestStorageDiscoveryAndDangerConfirmation(t *testing.T) {
 	if !strings.Contains(m.View(), "Suspected leftovers 0 B") {
 		t.Fatal("storage bytes leaked into leftover total")
 	}
-	if !strings.Contains(m.View(), "Storage 178 B") {
+	if !strings.Contains(m.View(), "Storage 137 B") || !strings.Contains(m.View(), "Developer 49 B") {
 		t.Fatal("header must show the total of Storage findings")
 	}
 	for _, item := range m.visible() {
@@ -160,7 +170,7 @@ func TestStorageDiscoveryAndDangerConfirmation(t *testing.T) {
 	if cmd != nil || !confirmed.confirm || confirmed.busy {
 		t.Fatal("storage removal must require confirmation")
 	}
-	if !strings.Contains(confirmed.confirmation(), "Danger: remove unverified storage?") || !strings.Contains(confirmed.confirmation(), m.visible()[0].Path) {
+	if !strings.Contains(confirmed.confirmation(), "Danger: remove unverified data?") || !strings.Contains(confirmed.confirmation(), m.visible()[0].Path) {
 		t.Fatal("danger confirmation must show the risk and full path")
 	}
 	cancelled, cmd := confirmed.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -178,13 +188,13 @@ func TestStorageDiscoveryAndDangerConfirmation(t *testing.T) {
 		t.Fatal("danger confirmation bypassed incomplete-scan protection")
 	}
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	if updated.(model).tab != 0 {
-		t.Fatal("Tab must wrap after Storage")
+	if updated.(model).tab != 4 {
+		t.Fatal("Tab must move from Storage to Developer")
 	}
 	m.tab = 0
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-	if updated.(model).tab != 3 {
-		t.Fatal("Shift+Tab must reach Storage")
+	if updated.(model).tab != 4 {
+		t.Fatal("Shift+Tab must wrap to Developer")
 	}
 }
 

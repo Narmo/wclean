@@ -165,7 +165,7 @@ func TestBatchSelectionsAndSafety(t *testing.T) {
 	if err := m.rememberCache(finding{Path: archive, Kind: "Storage", info: archiveInfo}); err != nil || len(m.remembered) != 0 {
 		t.Fatal("Storage removal became an automatic cache rule")
 	}
-	for _, bad := range []string{home, filepath.Join(home, "Library/Caches"), filepath.Join(home, "Library/Caches/kitty"), filepath.Join(home, "Library/Developer/Xcode/Archives"), filepath.Join(home, ".m2"), parent + "/../foo-bar"} {
+	for _, bad := range []string{home, filepath.Join(home, "Library/Caches"), filepath.Join(home, "Library/Caches/kitty"), filepath.Join(home, "Library/Developer/Xcode/Archives"), filepath.Join(home, ".m2-old"), parent + "/../foo-bar"} {
 		if _, err := cacheRootFor(home, bad); err == nil {
 			t.Fatalf("unsafe remembered scope: %s", bad)
 		}
@@ -181,7 +181,7 @@ func TestBatchSelectionsAndSafety(t *testing.T) {
 		t.Fatal("symlinked remembered path was accepted or forgotten")
 	}
 	// Malformed/hostile preferences must never be overwritten with an empty set.
-	data, _ := json.Marshal([]string{filepath.Join(home, ".m2")})
+	data, _ := json.Marshal([]string{filepath.Join(home, "Library/Logs")})
 	writeTestFile(t, memoryPath(home), string(data))
 	_, loadErr := loadMemory(home)
 	if loadErr == nil {

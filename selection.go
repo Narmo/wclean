@@ -13,6 +13,13 @@ import (
 	"unicode/utf8"
 )
 
+func (f finding) rememberable(home string) bool {
+	if f.Kind != "Cache" && f.Kind != "Developer" {
+		return false
+	}
+	root, _ := developerTree(home, f.Path)
+	return !f.Danger || root != ""
+}
 func withinPath(parent, path string) bool {
 	return path == parent || strings.HasPrefix(path, parent+string(filepath.Separator))
 }
@@ -46,6 +53,13 @@ func cacheRootFor(home, path string) (string, error) {
 		if label, _ := cacheDetails(home, root); label != "" && withinPath(root, path) {
 			return root, nil
 		}
+	}
+	// Whether the version is still older is checked at removal, so a missing one stays missing.
+	if root := versionedRoot(home, path); root != "" {
+		return root, nil
+	}
+	if root, _ := developerTree(home, path); root != "" {
+		return root, nil
 	}
 	return "", fmt.Errorf("not a supported cache path: %s", path)
 }
@@ -157,13 +171,18 @@ func resolveCache(ctx context.Context, home, path string) (finding, error) {
 		return finding{}, err
 	}
 	label, reason := cacheDetails(home, root)
-	if label != "" && !info.IsDir() {
+	tree, treeLabel := developerTree(home, root)
+	danger := tree == root
+	if danger {
+		label, reason = treeLabel, storageReason
+	}
+	if label != "" && !cacheShapeOK(home, root, info) {
 		return finding{}, fmt.Errorf("cache location is no longer a directory: %s", root)
 	}
 	if reason == "" {
 		reason = "Remembered cache; quit the owning app first. It may contain offline data or be regenerated."
 	}
-	f := finding{Path: root, Kind: "Cache", Label: label, Reason: reason, info: info}
+	f := finding{Path: root, Kind: category(home, root, "Cache"), Danger: danger, Label: label, Reason: reason, info: info}
 	if root != path {
 		relative, _ := filepath.Rel(root, path)
 		for _, part := range strings.Split(relative, string(filepath.Separator)) {
@@ -182,7 +201,7 @@ func resolveCache(ctx context.Context, home, path string) (finding, error) {
 				return finding{}, err
 			}
 			parent := f
-			f = finding{Path: next, Kind: "Cache", Reason: reason, info: info, parent: &parent}
+			f = finding{Path: next, Kind: parent.Kind, Danger: parent.Danger, Reason: reason, info: info, parent: &parent}
 		}
 	}
 	if _, err := validateLocation(home, f); err != nil {
@@ -194,6 +213,9 @@ func resolveCache(ctx context.Context, home, path string) (finding, error) {
 	var measured scanResult
 	if err := measured.addFinding(ctx, f); err != nil {
 		return finding{}, err
+	}
+	if len(measured.Items) == 0 {
+		return finding{}, fmt.Errorf("remembered path is a mounted filesystem: %s", f.Path)
 	}
 	f = measured.Items[0]
 	if err := validateFinding(home, f); err != nil {
@@ -231,7 +253,7 @@ func (m *model) persistMemory() error {
 	return nil
 }
 func (m *model) rememberCache(f finding) error {
-	if f.Kind != "Cache" || f.info == nil || f.Missing || m.remembered[f.Path] && !m.memoryDirty {
+	if !f.rememberable(m.home) || f.info == nil || f.Missing || m.remembered[f.Path] && !m.memoryDirty {
 		return nil
 	}
 	if _, err := cacheRootFor(m.home, f.Path); err != nil {
@@ -345,7 +367,7 @@ func (m model) addMissingMemory(result *scanResult) {
 		if err != nil && !os.IsNotExist(err) || err == nil {
 			reason = "Remembered path is currently unavailable or symlinked; uncheck to forget it."
 		}
-		result.Items = append(result.Items, finding{Path: path, Kind: "Cache", Missing: true, Reason: reason})
+		result.Items = append(result.Items, finding{Path: path, Kind: category(m.home, path, "Cache"), Missing: true, Reason: reason})
 	}
 	result.sort()
 }
