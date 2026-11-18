@@ -65,7 +65,7 @@ func prepareBatch(ctx context.Context, home string, selected []finding) []batchI
 	return result
 }
 
-func executeBatchItem(ctx context.Context, home string, roots []string, item batchItem) (missing bool, err error) {
+func executeBatchItem(ctx context.Context, home string, roots []string, item batchItem, force bool) (missing bool, err error) {
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}
@@ -75,14 +75,18 @@ func executeBatchItem(ctx context.Context, home string, roots []string, item bat
 	if item.missing {
 		return true, nil
 	}
-	err = trash(ctx, home, roots, item.finding)
+	if force {
+		err = deleteNow(ctx, home, roots, item.finding)
+	} else {
+		err = trash(ctx, home, roots, item.finding)
+	}
 	if errors.Is(err, os.ErrNotExist) {
 		return true, nil
 	}
 	return false, err
 }
 
-func cleanRemembered(ctx context.Context, home string, in io.Reader, out io.Writer, yes bool) error {
+func cleanRemembered(ctx context.Context, home string, in io.Reader, out io.Writer, yes, force bool) error {
 	memory, err := loadMemory(home)
 	if err != nil {
 		return err
@@ -116,7 +120,11 @@ func cleanRemembered(ctx context.Context, home string, in io.Reader, out io.Writ
 	}
 	if available > 0 {
 		if !yes {
-			fmt.Fprintf(out, "Move %d remembered cache(s) to Trash? Close their apps first. [y/N] ", available)
+			if force {
+				fmt.Fprintf(out, "Permanently delete %d remembered cache(s), skipping Trash? This cannot be undone. Close their apps first. [y/N] ", available)
+			} else {
+				fmt.Fprintf(out, "Move %d remembered cache(s) to Trash? Close their apps first. [y/N] ", available)
+			}
 			answer, err := bufio.NewReader(in).ReadString('\n')
 			if err != nil && err != io.EOF {
 				return err
@@ -130,7 +138,7 @@ func cleanRemembered(ctx context.Context, home string, in io.Reader, out io.Writ
 			if item.err != nil || item.missing {
 				continue
 			}
-			absent, err := executeBatchItem(ctx, home, nil, item)
+			absent, err := executeBatchItem(ctx, home, nil, item, force)
 			switch {
 			case err != nil:
 				failures++
@@ -138,6 +146,8 @@ func cleanRemembered(ctx context.Context, home string, in io.Reader, out io.Writ
 			case absent:
 				missing++
 				fmt.Fprintf(out, "MISSING %q (retained)\n", item.finding.Path)
+			case force:
+				fmt.Fprintf(out, "DELETED %q\n", item.finding.Path)
 			default:
 				fmt.Fprintf(out, "TRASHED %q\n", item.finding.Path)
 			}

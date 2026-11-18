@@ -53,7 +53,7 @@ func (m model) startBatch() (tea.Model, tea.Cmd) {
 func (m model) nextBatchCmd() tea.Cmd {
 	item, index, id, ctx := m.batch.items[m.batch.next], m.batch.next, m.batch.id, m.batch.ctx
 	return func() tea.Msg {
-		missing, err := executeBatchItem(ctx, m.home, m.roots, item)
+		missing, err := executeBatchItem(ctx, m.home, m.roots, item, false)
 		return batchStepMsg{id, index, missing, err}
 	}
 }

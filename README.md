@@ -2,7 +2,7 @@
 
 # wclean
 
-A local macOS cleaner with a Go terminal interface. Inspect first, remove one item at a time, recover through Finder. No subscription, daemon, telemetry, root access, or permanent-delete command.
+A local macOS cleaner with a Go terminal interface. Inspect first, remove one item at a time, recover through Finder. No subscription, daemon, telemetry, root access, or permanent deletion outside the opt-in `clean --force`.
 
 Leftover detection is conservative and heuristic. Review every candidate before removing it.
 
@@ -18,7 +18,7 @@ go build -o wclean .
 
 ./wclean --theme light|dark                  # if background detection fails
 ./wclean --apps "$HOME/Tools:/Volumes/Ext"   # extra app locations
-./wclean clean [--yes]                       # remove remembered caches
+./wclean clean [--yes] [--force]             # remove remembered caches
 ```
 
 Light/dark colors follow the terminal background detected at startup by Lip Gloss. Colors supplement labels and the `>` cursor, never replace them.
@@ -56,7 +56,7 @@ A successfully removed **Cache** or **Developer** entry is remembered by its exa
 - Manual checks survive navigation and filtering but reset on rescan. Only successful Cache removal saves a path. A successful removal also drops that path and its descendants from the current checks, so a removed Leftover never returns — it is neither checked nor remembered if its app is reinstalled.
 - `[b]` previews paths, sizes, missing entries, and errors. Checked parents subsume their children. Only `[y]` starts; removal is sequential with the usual per-item checks. Escape stops after the current item.
 
-`wclean clean` uses only remembered paths, marks `[danger]` ones in its listing, asks for `y` unless `--yes`, skips missing paths without forgetting them, and exits nonzero on errors. Symlinked, malformed, oversized, or non-cache preference entries are rejected, and a corrupt file is never overwritten with an empty set.
+`wclean clean` uses only remembered paths, marks `[danger]` ones in its listing, asks for `y` unless `--yes`, deletes permanently instead of trashing with `--force` (same safety checks, no Put Back), skips missing paths without forgetting them, and exits nonzero on errors. Symlinked, malformed, oversized, or non-cache preference entries are rejected, and a corrupt file is never overwritten with an empty set.
 
 ## What gets scanned
 

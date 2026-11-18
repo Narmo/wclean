@@ -413,3 +413,11 @@ end run`, f.Path).CombinedOutput()
 	}
 	return nil
 }
+
+// deleteNow is trash without Finder: same validation, but nothing is recoverable.
+func deleteNow(ctx context.Context, home string, roots []string, f finding) error {
+	if err := validateRemoval(ctx, home, roots, f); err != nil {
+		return err
+	}
+	return os.RemoveAll(f.Path)
+}

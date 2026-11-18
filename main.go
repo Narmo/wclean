@@ -781,19 +781,20 @@ func main() {
 	}
 	flags := flag.NewFlagSet("wclean", flag.ExitOnError)
 	flags.Usage = func() {
-		fmt.Fprint(flags.Output(), "Usage: wclean [options]\n       wclean clean [--yes]\n\n")
+		fmt.Fprint(flags.Output(), "Usage: wclean [options]\n       wclean clean [--yes] [--force]\n\n")
 		flags.PrintDefaults()
 	}
 	theme := flags.String("theme", "auto", "color theme: auto, light, dark")
 	extra := flags.String("apps", "", "additional app search locations, separated by ':'")
 	yes := flags.Bool("yes", false, "skip remembered-cache batch confirmation (clean command only)")
+	force := flags.Bool("force", false, "delete permanently, skipping Trash (clean command only)")
 	showVersion := flags.Bool("version", false, "print version and exit")
 	flags.Parse(args)
 	if *showVersion {
 		fmt.Println("wclean", version)
 		return
 	}
-	if flags.NArg() != 0 || *yes && !cleanMode {
+	if flags.NArg() != 0 || (*yes || *force) && !cleanMode {
 		flags.Usage()
 		os.Exit(2)
 	}
@@ -838,7 +839,7 @@ func main() {
 	if cleanMode {
 		cleanCtx, stop := signal.NotifyContext(ctx, os.Interrupt)
 		defer stop()
-		if err := cleanRemembered(cleanCtx, home, os.Stdin, os.Stdout, *yes); err != nil {
+		if err := cleanRemembered(cleanCtx, home, os.Stdin, os.Stdout, *yes, *force); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

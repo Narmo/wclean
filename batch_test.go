@@ -44,7 +44,7 @@ func TestRememberMissingCachesAndForget(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if err := cleanRemembered(context.Background(), home, strings.NewReader(""), &output, true); err != nil {
+	if err := cleanRemembered(context.Background(), home, strings.NewReader(""), &output, true, false); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "MISSING") {
@@ -61,7 +61,7 @@ func TestRememberMissingCachesAndForget(t *testing.T) {
 		t.Fatalf("regenerated cache not resolved: %+v", plan)
 	}
 	output.Reset()
-	if err := cleanRemembered(context.Background(), home, strings.NewReader("n\n"), &output, false); err != nil {
+	if err := cleanRemembered(context.Background(), home, strings.NewReader("n\n"), &output, false, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -196,7 +196,7 @@ func TestBatchSelectionsAndSafety(t *testing.T) {
 		t.Fatal("existing preferences lost")
 	}
 	var out bytes.Buffer
-	if err := cleanRemembered(context.Background(), home, strings.NewReader("y\n"), &out, true); err == nil {
+	if err := cleanRemembered(context.Background(), home, strings.NewReader("y\n"), &out, true, false); err == nil {
 		t.Fatal("CLI accepted hostile preferences")
 	}
 }
@@ -326,5 +326,35 @@ func TestCheckedTotalInFilterLine(t *testing.T) {
 	empty := model{width: 90, height: 28}
 	if line := ansi.Strip(empty.filterLine(empty.width)); !strings.Contains(line, "0 checked") || strings.Contains(line, "(") {
 		t.Fatalf("empty selection must not show a total: %q", line)
+	}
+}
+
+func TestCleanForceDeletesWithoutTrash(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, "Library/Caches/example")
+	writeTestFile(t, filepath.Join(path, "child"), "old")
+	if err := saveMemory(home, map[string]bool{path: true}); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := cleanRemembered(context.Background(), home, strings.NewReader("n\n"), &out, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil || !strings.Contains(out.String(), "Permanently delete") {
+		t.Fatalf("force ignored confirmation: %v\n%s", err, out.String())
+	}
+	out.Reset()
+	// os.RemoveAll in a temp dir: safe to run for real, unlike Finder Trash.
+	if err := cleanRemembered(context.Background(), home, strings.NewReader(""), &out, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) || !strings.Contains(out.String(), "DELETED") {
+		t.Fatalf("force did not delete: %v\n%s", err, out.String())
+	}
+	if memory, err := loadMemory(home); err != nil || !memory[path] {
+		t.Fatalf("deleted path forgotten: %v", err)
 	}
 }

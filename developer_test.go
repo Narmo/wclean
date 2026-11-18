@@ -145,7 +145,7 @@ func TestDeveloperTreesAreRemembered(t *testing.T) {
 		t.Fatalf("remembered tree child did not resolve: %+v %v", resolved, err)
 	}
 	var out strings.Builder
-	if err := cleanRemembered(ctx, home, strings.NewReader("n\n"), &out, false); err != nil || !strings.Contains(out.String(), "[danger]") || !strings.Contains(out.String(), "Cancelled") {
+	if err := cleanRemembered(ctx, home, strings.NewReader("n\n"), &out, false, false); err != nil || !strings.Contains(out.String(), "[danger]") || !strings.Contains(out.String(), "Cancelled") {
 		t.Fatalf("clean listing: %v\n%s", err, out.String())
 	}
 	if _, err := os.Stat(filepath.Join(home, ".m2/repository/local-artifact")); err != nil {
